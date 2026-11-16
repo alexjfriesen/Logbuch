@@ -13,15 +13,17 @@
 <title>Logbuch – Fitnesstracker</title>
 <style>
 :root{--bg:#0e1014;--card:#181b22;--card2:#20242d;--line:#2a2f3a;--tx:#eef0f4;--mu:#8b93a3;--ac:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--sab:env(safe-area-inset-bottom)}
-/* iOS 26: Ansicht endet in der Homescreen-App zu früh; der tote Streifen darunter deckt den Home-Balken schon ab */
-html.gap{--sab:0px}
+/* iOS 26: Die Homescreen-App meldet eine zu kurze Ansicht (--short, per Skript gemessen). Ist das Dokument so hoch
+   wie der Bildschirm, reichen fest verankerte Leisten bis zum unteren Rand (auf dem Gerät beobachtet). */
+html{min-height:calc(100% + var(--short,0px))}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-body{padding:env(safe-area-inset-top) 0 190px;max-width:640px;margin:0 auto}
-/* Echter, fest verankerter Streifen über die volle Breite hinter der Statusleiste.
-   iOS 26 legt sonst einen Weichzeichner über die oberen ~40pt; WebKit lässt ihn weg, wenn am oberen Rand
-   ein fixiertes, deckend gefärbtes Element liegt (ein ::before zählt dafür nicht). */
-#edge{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background-color:#0e1014;z-index:25}
+body{padding:calc(env(safe-area-inset-top) + var(--xt,0px)) 0 190px;max-width:640px;margin:0 auto}
+/* iOS 26 legt in der Homescreen-App einen Weichzeichner über die Statusleiste und rund 40pt darunter.
+   Er ließ sich auf dem Gerät nicht abschalten; deshalb beginnt der Inhalt um --xt tiefer, und dieser
+   deckende Streifen füllt den Bereich, damit dort nie Text liegt. */
+#edge{position:fixed;top:0;left:0;right:0;height:calc(env(safe-area-inset-top) + var(--xt,0px));background-color:#0e1014;z-index:25}
+#probe{position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none}
 h1{font-size:26px;margin:18px 16px 10px}
 h2{font-size:15px;color:var(--mu);font-weight:600;margin:22px 16px 8px;text-transform:uppercase;letter-spacing:.04em}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
@@ -50,7 +52,7 @@ nav svg{display:block;margin:0 auto 2px;width:24px;height:24px}
 .rest .bar{height:4px;background:#24344f;border-radius:2px;margin-bottom:8px;overflow:hidden}
 .rest .bar i{display:block;height:100%;background:var(--ac)}
 .rest .t{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;min-width:74px;text-align:center}
-.top{position:sticky;top:0;top:env(safe-area-inset-top);background:var(--bg);z-index:4;padding:10px 12px;border-bottom:1px solid var(--line)}
+.top{position:sticky;top:0;top:calc(env(safe-area-inset-top) + var(--xt,0px));background:var(--bg);z-index:4;padding:10px 12px;border-bottom:1px solid var(--line)}
 .sets{margin-top:8px}
 .sh,.set{display:grid;grid-template-columns:40px minmax(0,1fr) 22% 20% 44px;gap:4px;align-items:center;justify-items:center;padding:3px 2px}
 .sets.iso .sh,.sets.iso .set{grid-template-columns:40px minmax(0,1fr) 30% 44px 44px}
@@ -90,7 +92,7 @@ nav svg{display:block;margin:0 auto 2px;width:24px;height:24px}
 .pr{color:var(--warn);font-weight:700}
 svg.ch{width:100%;height:auto;display:block}
 .toast .link{margin-left:12px}
-.toast{position:fixed;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#fff;color:#111;padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:30;white-space:nowrap}
+.toast{position:fixed;top:calc(14px + env(safe-area-inset-top) + var(--xt,0px));left:50%;transform:translateX(-50%);background:#fff;color:#111;padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:30;white-space:nowrap}
 .ssl{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:2px 8px;margin-bottom:8px;white-space:nowrap}
 .li .ssl,.srow .ssl{margin:0}
 .srow{display:flex;align-items:center;gap:8px;background:var(--card2);border-radius:10px;padding:6px 8px 6px 2px;margin-bottom:6px;transition:transform .15s}
@@ -101,7 +103,7 @@ svg.ch{width:100%;height:auto;display:block}
 </style>
 </head>
 <body>
-<div id="edge"></div>
+<div id="edge"></div><div id="probe"></div>
 <div id="app"></div>
 <div id="banner"></div>
 <nav id="nav"></nav>
@@ -135,7 +137,7 @@ const ui={tab:"train",showWorkout:false,edit:null,detail:null,statEx:null,clockO
 let restT=null, tick=null, actx=null, bKey=null;
 const clk={mode:"sw",running:false,t0:0,acc:0,total:60,target:null};
 let sortCtx=null, drag=null, swp=null, undoFn=null;
-const VER="5";
+const VER="6";
 const SSC=["#f59e0b","#a78bfa","#34d399","#f472b6","#38bdf8"];
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -471,7 +473,8 @@ function vMore(){
     <div style="margin-top:12px">${line(b.map(x=>({x:dShort(x.t),y:x.kg})),"kg")}</div>
     ${b.slice(-5).reverse().map(x=>`<div class="row mu" style="padding:4px 0"><span class="sp">${dDate(x.t)}</span><b style="color:var(--tx)">${fmt(x.kg)} kg</b><button data-a="bwDel" data-v="${x.t}" style="color:var(--bad)">✕</button></div>`).join("")}</div>
   <h2>Einstellungen</h2><div class="card"><div class="row"><span class="sp">Standard-Pausenzeit</span><select data-f="rest" style="width:auto">${restOpts(S.settings.rest)}</select></div>
-    <div class="row" style="margin-top:10px"><span class="sp">Pause nach abgehaktem Satz automatisch starten</span><select data-f="autoRest" style="width:auto"><option value="">Aus</option><option value="1" ${S.settings.autoRest?"selected":""}>An</option></select></div></div>
+    <div class="row" style="margin-top:10px"><span class="sp">Pause nach abgehaktem Satz automatisch starten</span><select data-f="autoRest" style="width:auto"><option value="">Aus</option><option value="1" ${S.settings.autoRest?"selected":""}>An</option></select></div>
+    <div class="row" style="margin-top:10px"><span class="sp">Abstand oben<br><span class="mu">Hält den Inhalt aus dem unscharfen Bereich unter der Statusleiste</span></span><select data-f="topPad" style="width:auto">${[["","Automatisch"],["0","Kein"],["20","Klein"],["36","Mittel"],["52","Groß"]].map(o=>`<option value="${o[0]}" ${String(S.settings.topPad==null?"":S.settings.topPad)===o[0]?"selected":""}>${o[1]}</option>`).join("")}</select></div></div>
   <h2>Daten</h2><div class="card"><button class="btn" data-a="csv">Workouts als CSV exportieren</button>
     <button class="btn sec" style="margin-top:8px" data-a="backup">Backup exportieren (JSON)</button>
     <button class="btn sec" style="margin-top:8px" data-a="restore">Backup importieren</button>
@@ -480,12 +483,16 @@ function vMore(){
   <p class="mu" style="text-align:center;margin:18px 0">Logbuch · Version ${VER}<br><span style="font-size:11px">${diag()}</span></p>`;
 }
 
-/* Anzeige-Werte für die Fehlersuche: Bildschirm · Ansicht · oberer Rand · L = Lücke unten erkannt */
-function diag(){const e=$("#edge");return `${screen.width}×${screen.height} · ${innerWidth}×${innerHeight} · ${e?e.offsetHeight:0}${document.documentElement.classList.contains("gap")?" · L":""} · ${navigator.standalone===true?"App":"Browser"}`}
-/* Erkennt die zu kurze Ansicht der iOS-Homescreen-App und spart dann den unteren Sicherheitsabstand ein */
+/* Anzeige-Werte für die Fehlersuche: Bildschirm · Ansicht · Rand oben + Zusatzabstand · Höhenkorrektur */
+function diag(){const os=(navigator.userAgent.match(/OS (\d+_\d+)/)||[])[1]||"";
+  return `${screen.width}×${screen.height} · ${innerWidth}×${innerHeight} · ${ui.sat}+${ui.xt} · H+${ui.short} · ${navigator.standalone===true?"App":"Browser"} ${os}`}
+/* Misst die Ränder der iOS-Homescreen-App und setzt Zusatzabstand oben (--xt) und Höhenkorrektur (--short) */
 function fit(){
-  const e=$("#edge"),top=e?e.offsetHeight:0,sh=Math.max(screen.width,screen.height);
-  document.documentElement.classList.toggle("gap",navigator.standalone===true&&innerHeight>innerWidth&&top>0&&sh-innerHeight>=30);
+  const p=$("#probe"),top=p?p.offsetHeight:0,app=navigator.standalone===true,d=Math.max(screen.width,screen.height)-innerHeight;
+  const v=S.settings.topPad,r=document.documentElement.style;
+  ui.sat=top;ui.short=app&&innerHeight>innerWidth&&top>0&&d>=20&&d<=80?d:0;
+  ui.xt=v!=null&&v!==""?+v:(app&&top>0?36:0);
+  r.setProperty("--short",ui.short+"px");r.setProperty("--xt",ui.xt+"px");
 }
 
 /* ---------- Dialoge ---------- */
@@ -645,6 +652,7 @@ document.addEventListener("change",ev=>{
   const t=ev.target,f=t.dataset.f;
   if(f==="rest"){S.settings.rest=+t.value;save()}
   else if(f==="autoRest"){S.settings.autoRest=!!t.value;save()}
+  else if(f==="topPad"){if(t.value==="")delete S.settings.topPad;else S.settings.topPad=+t.value;save();fit();render()}
   else if(f==="d"){const s=S.active.exercises[+t.dataset.e].sets[+t.dataset.s],v=parseDur(t.value);s.d=v==null?"":mmss(v);t.value=s.d;save()}
   else if(f==="exRest"){S.active.exercises[+t.dataset.e].rest=+t.value;save();render()}
   else if(f==="exKind"){const i=+t.dataset.e,old=S.active.exercises[i],e=S.exercises.find(x=>x.id===old.exId);
