@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Logbuch">
 <meta name="theme-color" content="#0e1014">
 <link rel="manifest" href="manifest.json">
@@ -46,19 +46,25 @@ nav svg{display:block;margin:0 auto 2px;width:24px;height:24px}
 .rest .bar i{display:block;height:100%;background:var(--ac)}
 .rest .t{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;min-width:74px;text-align:center}
 .top{position:sticky;top:0;top:env(safe-area-inset-top);background:var(--bg);z-index:4;padding:10px 12px;border-bottom:1px solid var(--line)}
-table.sets{width:100%;border-collapse:collapse;margin-top:8px}
-.sets th{font-size:11px;color:var(--mu);font-weight:600;text-transform:uppercase;padding:4px 2px}
-.sets td{padding:3px 2px;text-align:center}
+.sets{margin-top:8px}
+.sh,.set{display:grid;grid-template-columns:40px minmax(0,1fr) 22% 20% 44px;gap:4px;align-items:center;justify-items:center;padding:3px 2px}
+.sets.iso .sh,.sets.iso .set{grid-template-columns:40px minmax(0,1fr) 30% 44px 44px}
+.sh{font-size:11px;color:var(--mu);font-weight:600;text-transform:uppercase;padding:4px 2px}
+.srw{position:relative;overflow:hidden;border-radius:8px}
+.srw.sw{background:var(--bad)}
+.srw.sw::after{content:"Löschen";position:absolute;right:14px;top:50%;transform:translateY(-50%);color:#fff;font-weight:700;font-size:14px}
+.set{background:var(--card);position:relative;z-index:1;touch-action:pan-y;transition:transform .18s}
+.set.swiping{transition:none}
+.set.done{background:linear-gradient(rgba(34,197,94,.13),rgba(34,197,94,.13)),var(--card)}
 .sets input{text-align:center;padding:8px 2px;border-radius:8px;font-weight:600;font-variant-numeric:tabular-nums}
 .sets input::placeholder{color:#5d6576;font-weight:400}
-.sets tr.done td{background:rgba(34,197,94,.13)}
-.sets tr.done input{background:transparent;border-color:transparent}
+.set.done input{background:transparent;border-color:transparent}
 .tag{width:34px;height:34px;border-radius:8px;background:var(--card2);font-weight:700}
 .tag.W{color:var(--warn)}.tag.D{color:#a78bfa}.tag.F{color:var(--bad)}
 .prev{font-size:13px;color:var(--mu);white-space:nowrap}
 .chk,.go{width:38px;height:34px;border-radius:8px;background:var(--card2);color:var(--mu);font-weight:700}
 .go{color:var(--ac);display:inline-flex;align-items:center;justify-content:center}
-tr.done .chk{background:var(--ok);color:#fff}
+.set.done .chk{background:var(--ok);color:#fff}
 .shake{animation:sh .3s}@keyframes sh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;display:none;align-items:flex-end;justify-content:center}
 #modal.on{display:flex}
@@ -78,6 +84,7 @@ tr.done .chk{background:var(--ok);color:#fff}
 .stat b{display:block;font-size:22px}
 .pr{color:var(--warn);font-weight:700}
 svg.ch{width:100%;height:auto;display:block}
+.toast .link{margin-left:12px}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#fff;color:#111;padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:30;white-space:nowrap}
 .ssl{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:2px 8px;margin-bottom:8px;white-space:nowrap}
 .li .ssl,.srow .ssl{margin:0}
@@ -121,7 +128,8 @@ let S=load();
 const ui={tab:"train",showWorkout:false,edit:null,detail:null,statEx:null,clockOpen:false};
 let restT=null, tick=null, actx=null, bKey=null;
 const clk={mode:"sw",running:false,t0:0,acc:0,total:60,target:null};
-let sortCtx=null, drag=null;
+let sortCtx=null, drag=null, swp=null, undoFn=null;
+const VER="4";
 const SSC=["#f59e0b","#a78bfa","#34d399","#f472b6","#38bdf8"];
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -166,7 +174,9 @@ function parseDur(v){
 }
 const e1rm=(w,r)=>r>0?w*(1+r/30):0;
 function volume(w){let v=0;w.exercises.forEach(e=>e.sets.forEach(s=>{if(s.t!=="W")v+=(s.w||0)*(s.r||0)}));return v}
-function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2200)}
+function toast(m,act,fn){const t=document.createElement("div");t.className="toast";t.textContent=m;
+  if(act){undoFn=fn;const b=document.createElement("button");b.className="link";b.dataset.a="undo";b.textContent=act;t.appendChild(b)}
+  document.body.appendChild(t);setTimeout(()=>t.remove(),act?5000:2200)}
 
 /* Supersätze: Einträge mit gleicher ss-Kennung gehören zusammen; Gruppen mit nur einer Übung werden aufgelöst */
 function normSS(list){const c={};list.forEach(e=>{if(e.ss)c[e.ss]=(c[e.ss]||0)+1});list.forEach(e=>{if(e.ss&&c[e.ss]<2)delete e.ss})}
@@ -215,7 +225,7 @@ function startWorkout(routine){
   ui.showWorkout=true;save();render();
 }
 function prevFor(ex,i){const p=lastSets(ex.exId),s=p&&p[i]?p[i]:null;return s&&((s.sec!=null)===!!ex.iso)?s:null}
-function shake(el){const tr=el&&el.closest("tr");if(!tr)return;tr.classList.remove("shake");void tr.offsetWidth;tr.classList.add("shake")}
+function shake(el){const tr=el&&el.closest(".set");if(!tr)return;tr.classList.remove("shake");void tr.offsetWidth;tr.classList.add("shake")}
 function toggleSet(ei,si,el){
   const ex=S.active.exercises[ei],s=ex.sets[si];
   if(s.done){s.done=false;save();return render()}
@@ -362,17 +372,17 @@ function vWorkout(){
       ${ex.rest>0?`<button class="btn sec sm" data-a="restStart" data-v="${ei}">Pause ${clock(ex.rest)}</button>`:""}
       <button class="btn sec sm" data-a="exMenu" data-v="${ei}">•••</button></div>
     <input style="margin-top:8px;font-size:14px" data-f="note" data-e="${ei}" value="${esc(ex.note)}" placeholder="${ln?esc("Letztes Mal: "+ln):"Notiz hinzufügen"}">
-    <table class="sets"><tr><th style="width:40px">Satz</th><th>Letztes Mal</th>${ex.iso?`<th style="width:30%">Zeit</th><th style="width:44px">Uhr</th>`:`<th style="width:22%">kg</th><th style="width:20%">Wdh.</th>`}<th style="width:44px">✓</th></tr>
+    <div class="sets${ex.iso?" iso":""}"><div class="sh"><span>Satz</span><span>Letztes Mal</span>${ex.iso?`<span>Zeit</span><span>Uhr</span>`:`<span>kg</span><span>Wdh.</span>`}<span>✓</span></div>
     ${ex.sets.map((s,si)=>{const p=prevFor(ex,si);let n=0;for(let k=0;k<=si;k++)if(ex.sets[k].t!=="W")n++;
       const at=`data-e="${ei}" data-s="${si}"`;
-      return `<tr class="${s.done?"done":""}"><td><button class="tag ${s.t}" data-a="setMenu" ${at}>${s.t==="N"?n:s.t}</button></td>
-      <td><button class="prev" data-a="usePrev" ${at}>${p?(ex.iso?mmss(p.sec):fmt(p.w)+" kg × "+fmt(p.r)):"–"}</button></td>
-      ${ex.iso?`<td><input inputmode="numeric" data-f="d" ${at} value="${esc(s.d)}" placeholder="${p?mmss(p.sec):"mm:ss"}"></td>
-        <td><button class="go" data-a="clock" ${at} aria-label="Uhr starten"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button></td>`
-       :`<td><input inputmode="decimal" data-f="w" ${at} value="${esc(s.w)}" placeholder="${p?fmt(p.w):""}"></td>
-        <td><input inputmode="numeric" data-f="r" ${at} value="${esc(s.r)}" placeholder="${p?fmt(p.r):""}"></td>`}
-      <td><button class="chk" data-a="check" ${at}>✓</button></td></tr>`}).join("")}
-    </table><button class="btn sec" style="margin-top:8px;padding:8px" data-a="addSet" data-v="${ei}">+ Satz hinzufügen</button></div>`}).join("")}
+      return `<div class="srw"><div class="set${s.done?" done":""}" data-se="${ei}" data-ss="${si}"><button class="tag ${s.t}" data-a="setMenu" ${at}>${s.t==="N"?n:s.t}</button>
+      <button class="prev" data-a="usePrev" ${at}>${p?(ex.iso?mmss(p.sec):fmt(p.w)+" kg × "+fmt(p.r)):"–"}</button>
+      ${ex.iso?`<input inputmode="numeric" data-f="d" ${at} value="${esc(s.d)}" placeholder="${p?mmss(p.sec):"mm:ss"}">
+        <button class="go" data-a="clock" ${at} aria-label="Uhr starten"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>`
+       :`<input inputmode="decimal" data-f="w" ${at} value="${esc(s.w)}" placeholder="${p?fmt(p.w):""}">
+        <input inputmode="numeric" data-f="r" ${at} value="${esc(s.r)}" placeholder="${p?fmt(p.r):""}">`}
+      <button class="chk" data-a="check" ${at}>✓</button></div></div>`}).join("")}
+    </div><button class="btn sec" style="margin-top:8px;padding:8px" data-a="addSet" data-v="${ei}">+ Satz hinzufügen</button></div>`}).join("")}
   <div class="pad" style="margin-top:14px"><button class="btn" data-a="addEx">+ Übung hinzufügen</button>
   ${a.exercises.length>1?`<button class="btn sec" style="margin-top:8px" data-a="sortEx">Reihenfolge ändern</button>`:""}
   <button class="btn bad" style="margin-top:6px" data-a="discard">Workout verwerfen</button></div>`;
@@ -460,7 +470,8 @@ function vMore(){
     <button class="btn sec" style="margin-top:8px" data-a="backup">Backup exportieren (JSON)</button>
     <button class="btn sec" style="margin-top:8px" data-a="restore">Backup importieren</button>
     <button class="btn sec" style="margin-top:8px" data-a="exList">Übungen verwalten</button>
-    <p class="mu" style="margin-bottom:0">Alle Daten liegen nur in diesem Browser auf diesem Gerät. Exportiere regelmäßig ein Backup.</p></div>`;
+    <p class="mu" style="margin-bottom:0">Alle Daten liegen nur in diesem Browser auf diesem Gerät. Exportiere regelmäßig ein Backup.</p></div>
+  <p class="mu" style="text-align:center;margin:18px 0">Logbuch · Version ${VER}</p>`;
 }
 
 /* ---------- Dialoge ---------- */
@@ -508,6 +519,9 @@ async function saveFile(name,text,mime){
     return sheet(`<h3>${esc(name)}</h3><p class="mu">Der direkte Download ist in dieser Ansicht nicht möglich. Kopiere den Inhalt und füge ihn z.&nbsp;B. in Notizen oder eine Datei ein.</p>
       <textarea id="xt" rows="8" readonly>${esc(text)}</textarea><button class="btn" data-a="copy">Kopieren</button><button class="btn sec" data-a="close">Schließen</button>`);
   }
+  try{if(navigator.canShare&&matchMedia("(pointer:coarse)").matches){for(const t of [mime,"text/plain"]){const f=new File([text],name,{type:t});
+    if(navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}}}
+  catch(e){if(e&&e.name==="AbortError")return}
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:mime}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
 }
 function stamp(){const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
@@ -547,6 +561,7 @@ const A={
   sortEx(){sorter(S.active.exercises,()=>{save();render()})},
   sortMove(d){if(!sortCtx)return;const l=sortCtx.list,i=+d.i,j=i+(+d.v);if(j<0||j>=l.length)return;[l[i],l[j]]=[l[j],l[i]];sortCtx.done();sortSheet()},
   sortDone(){closeSheet()},
+  undo(d,el){const f=undoFn;undoFn=null;const t=el.closest(".toast");if(t)t.remove();if(f)f()},
   exSwap(d){const i=+d.v;picker(id=>{const old=S.active.exercises[i],n=newEntry(id,old.sets.length);if(old.ss)n.ss=old.ss;S.active.exercises[i]=n;save();closeSheet();render()})},
   exDel(d){S.active.exercises.splice(+d.v,1);normSS(S.active.exercises);save();closeSheet();render()},
   restStart(d){const ex=S.active.exercises[+d.v];if(ex&&ex.rest>0)startRest(ex.rest)},
@@ -651,6 +666,38 @@ function dragEnd(ev,apply){
 }
 document.addEventListener("pointerup",ev=>dragEnd(ev,true));
 document.addEventListener("pointercancel",ev=>dragEnd(ev,false));
+
+/* Satz löschen: Zeile nach links wischen (mit Rückgängig) */
+function delSet(ei,si){
+  const ex=S.active&&S.active.exercises[ei];if(!ex||!ex.sets[si])return;
+  const set=ex.sets.splice(si,1)[0];save();render();
+  toast("Satz gelöscht","Rückgängig",()=>{if(S.active&&S.active.exercises.includes(ex)){ex.sets.splice(Math.min(si,ex.sets.length),0,set);save();render()}});
+}
+document.addEventListener("pointerdown",ev=>{
+  if(swp||drag)return;const el=ev.target.closest&&ev.target.closest(".set");if(!el)return;
+  if(ev.pointerType==="mouse"&&(ev.button!==0||ev.target.closest("input")))return;
+  swp={el,x0:ev.clientX,y0:ev.clientY,id:ev.pointerId,on:false,dx:0};
+});
+document.addEventListener("pointermove",ev=>{
+  if(!swp||ev.pointerId!==swp.id)return;
+  const dx=ev.clientX-swp.x0,dy=ev.clientY-swp.y0;
+  if(!swp.on){
+    if(Math.abs(dy)>12&&Math.abs(dy)>=Math.abs(dx)){swp=null;return}
+    if(dx>-12||Math.abs(dx)<Math.abs(dy)*1.5)return;
+    swp.on=true;swp.el.classList.add("swiping");swp.el.parentNode.classList.add("sw");
+    try{swp.el.setPointerCapture(swp.id)}catch(e){}
+  }
+  swp.dx=Math.min(0,dx);swp.el.style.transform="translateX("+swp.dx+"px)";
+});
+function swipeEnd(ev,ok){
+  if(!swp||ev.pointerId!==swp.id)return;const w=swp;swp=null;if(!w.on)return;
+  const el=w.el,lim=Math.min(150,el.offsetWidth*.4);
+  el.classList.remove("swiping");
+  if(ok&&w.dx<-lim){el.style.transform="translateX(-105%)";const ei=+el.dataset.se,si=+el.dataset.ss;setTimeout(()=>delSet(ei,si),170)}
+  else{el.style.transform="";setTimeout(()=>{if(el.parentNode)el.parentNode.classList.remove("sw")},200)}
+}
+document.addEventListener("pointerup",ev=>swipeEnd(ev,true));
+document.addEventListener("pointercancel",ev=>swipeEnd(ev,false));
 
 /* Offline-Betrieb und dauerhafter Speicher (greift nur bei eigener Installation, z. B. über GitHub Pages) */
 try{if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")&&!window.claude)navigator.serviceWorker.register("sw.js").catch(()=>{})}catch(e){}
