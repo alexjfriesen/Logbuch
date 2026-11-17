@@ -78,6 +78,12 @@ nav svg{display:block;margin:0 auto 2px;width:24px;height:24px}
 .sheet{background:var(--card);width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 14px calc(18px + var(--sab))}
 .sheet h3{margin:0 0 12px;font-size:18px}
 .sheet .btn{margin-top:8px}
+/* Übungsauswahl: feste Höhe bis knapp unter die Statusleiste; nur die Liste scrollt.
+   Zusammen mit vvFit() endet sie immer an der Oberkante der Tastatur. */
+.sheet.full{height:calc(100% - env(safe-area-inset-top) - var(--xt,0px) - 8px);max-height:none;display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(10px + var(--sab))}
+.sheet.full #plist{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+#modal.kb .sheet{padding-bottom:10px}
+.shead{display:flex;align-items:center;margin-bottom:10px}.shead h3{flex:1;margin:0}
 .li{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);width:100%;text-align:left}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .chips button{background:var(--card2);border-radius:999px;padding:6px 12px;font-size:13px;white-space:nowrap;color:var(--mu)}
@@ -137,7 +143,7 @@ const ui={tab:"train",showWorkout:false,edit:null,detail:null,statEx:null,clockO
 let restT=null, tick=null, actx=null, bKey=null;
 const clk={mode:"sw",running:false,t0:0,acc:0,total:60,target:null};
 let sortCtx=null, drag=null, swp=null, undoFn=null, pendRt=null;
-const VER="7";
+const VER="8";
 const SSC=["#f59e0b","#a78bfa","#34d399","#f472b6","#38bdf8"];
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -517,16 +523,27 @@ function fit(){
 }
 
 /* ---------- Dialoge ---------- */
-function sheet(h){ui.clockOpen=false;$("#modal").innerHTML=`<div class="sheet">${h}</div>`;$("#modal").classList.add("on")}
+function sheet(h){ui.clockOpen=false;$("#modal").innerHTML=`<div class="sheet">${h}</div>`;$("#modal").classList.add("on");vvFit()}
 function closeSheet(){ui.clockOpen=false;sortCtx=null;$("#modal").classList.remove("on");$("#modal").innerHTML="";pickCb=null;banner()}
 let pickCb=null,pickG="Alle",pickQ="";
-function picker(cb){pickG="Alle";pickQ="";sheet(`<h3>Übung wählen</h3><input id="pq" placeholder="Suchen …"><div class="chips" id="pchips"></div><div id="plist"></div>
-  <button class="btn sec" data-a="newEx">+ Eigene Übung anlegen</button><button class="btn sec" data-a="close">Schließen</button>`);pickCb=cb;pickList()}
+function picker(cb){pickG="Alle";pickQ="";sheet(`<div class="shead"><h3>Übung wählen</h3><button class="link" data-a="close">Schließen</button></div>
+  <input id="pq" type="search" placeholder="Suchen …" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done"><div class="chips" id="pchips"></div><div id="plist"></div>`);
+  $(".sheet").classList.add("full");pickCb=cb;pickList()}
 function pickList(){
   $("#pchips").innerHTML=["Alle",...GROUPS].map(g=>`<button class="${g===pickG?"on":""}" data-a="pickG" data-v="${g}">${g}</button>`).join("");
   const q=pickQ.toLowerCase();
   const l=S.exercises.filter(e=>(pickG==="Alle"||e.group===pickG)&&e.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
-  $("#plist").innerHTML=l.map(e=>`<button class="li" data-a="pick" data-v="${e.id}"><span class="sp">${esc(e.name)}</span><span class="mu">${e.group}${e.kind==="iso"?" · Zeit":""}</span></button>`).join("")||`<div class="mu" style="padding:12px 4px">Nichts gefunden.</div>`;
+  $("#plist").innerHTML=l.map(e=>`<button class="li" data-a="pick" data-v="${e.id}"><span class="sp">${esc(e.name)}</span><span class="mu">${e.group}${e.kind==="iso"?" · Zeit":""}</span></button>`).join("")+(l.length?"":`<div class="mu" style="padding:12px 4px">Nichts gefunden.</div>`)
+    +`<button class="btn sec" style="margin:10px 0 4px" data-a="newEx">+ Eigene Übung anlegen</button>`;
+  $("#plist").scrollTop=0;
+}
+/* Dialoge an den sichtbaren Bereich anpassen: Bei offener Tastatur verkleinert iOS nur den sichtbaren Bereich
+   (visualViewport), nicht die Seite. Ohne Anpassung rutscht das untere Ende eines Dialogs hinter die Tastatur. */
+function vvFit(){
+  const v=window.visualViewport,m=$("#modal");if(!m)return;
+  if(!v){m.style.top=m.style.height="";m.classList.remove("kb");return}
+  m.style.top=Math.max(0,v.offsetTop)+"px";m.style.height=v.height+"px";m.style.bottom="auto";
+  m.classList.toggle("kb",v.height<window.innerHeight-120);
 }
 function newExSheet(){const cb=pickCb;sheet(`<h3>Eigene Übung</h3><input id="nxn" placeholder="Name der Übung" value="${esc(pickQ)}"><select id="nxg" style="margin-top:8px">${GROUPS.map(g=>`<option>${g}</option>`).join("")}</select>
   <select id="nxk" style="margin-top:8px"><option value="">Gewicht × Wiederholungen</option><option value="iso">Zeit (mm:ss) – isometrisch</option></select>
@@ -750,6 +767,9 @@ try{if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hos
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{})}catch(e){}
 
 fit();addEventListener("resize",fit);
+try{if(window.visualViewport){visualViewport.addEventListener("resize",vvFit);visualViewport.addEventListener("scroll",vvFit)}}catch(e){}
+/* Enter/„Fertig“ in der Suche schließt die Tastatur */
+document.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.id==="pq"){ev.preventDefault();ev.target.blur()}});
 if(S.active)ui.showWorkout=true;
 render();
 </script>
