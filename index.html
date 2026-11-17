@@ -136,8 +136,8 @@ let S=load();
 const ui={tab:"train",showWorkout:false,edit:null,detail:null,statEx:null,clockOpen:false};
 let restT=null, tick=null, actx=null, bKey=null;
 const clk={mode:"sw",running:false,t0:0,acc:0,total:60,target:null};
-let sortCtx=null, drag=null, swp=null, undoFn=null;
-const VER="6";
+let sortCtx=null, drag=null, swp=null, undoFn=null, pendRt=null;
+const VER="7";
 const SSC=["#f59e0b","#a78bfa","#34d399","#f472b6","#38bdf8"];
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -283,15 +283,36 @@ function finishYes(){
     if(b.sec>0&&ms>b.sec)prs.push(nm+": "+mmss(ms)+" (Zeit)");
     else if(b.rm>0||b.w>0){if(mw>b.w)prs.push(nm+": "+fmt(mw)+" kg (Gewicht)");else if(mr>b.rm+0.01)prs.push(nm+": "+fmt(mr)+" kg (gesch. 1RM)")}
   });
+  /* Routine bleibt unverändert; bei Abweichungen wird nachgefragt */
+  let rt=null;
   if(a.routineId){const r=S.routines.find(x=>x.id===a.routineId);
-    if(r){r.items=a.exercises.filter(e=>e.sets.some(s=>s.done)).map(e=>{const o={exId:e.exId,sets:e.sets.filter(s=>s.done).length};if(e.ss)o.ss=e.ss;return o});normSS(r.items)}}
+    if(r){const items=a.exercises.filter(e=>e.sets.some(s=>s.done)).map(e=>{const o={exId:e.exId,sets:e.sets.filter(s=>s.done).length};if(e.ss)o.ss=e.ss;return o});
+      normSS(items);const diff=routineDiff(r.items,items);if(diff.length)rt={rid:r.id,name:r.name,items,diff}}}
   S.workouts.push(w);S.active=null;stopRest();clkClear();ui.showWorkout=false;ui.tab="hist";save();
   const nsets=w.exercises.reduce((n,e)=>n+e.sets.length,0);
-  sheet(`<h3>Geschafft 💪</h3><div class="row"><div class="stat"><b>${dur(w.end-w.start)}</b><span class="mu">Dauer</span></div>
+  const summary=`<h3>Geschafft 💪</h3><div class="row"><div class="stat"><b>${dur(w.end-w.start)}</b><span class="mu">Dauer</span></div>
     <div class="stat"><b>${nsets}</b><span class="mu">Sätze</span></div><div class="stat"><b>${fmt(Math.round(volume(w)))}</b><span class="mu">kg Volumen</span></div></div>
     ${prs.length?`<h2 style="margin-left:0">Neue Rekorde</h2>`+prs.map(p=>`<div class="pr">🏆 ${esc(p)}</div>`).join(""):""}
-    <button class="btn" data-a="close">Fertig</button>`);
+    <button class="btn" data-a="close">Fertig</button>`;
   render();
+  if(rt){pendRt={...rt,summary};
+    sheet(`<h3>Routine „${esc(rt.name)}“ anpassen?</h3><p class="mu">Du bist heute vom Plan abgewichen:</p>
+      <ul style="margin:6px 0 10px;padding-left:20px">${rt.diff.map(d=>`<li style="padding:2px 0">${esc(d)}</li>`).join("")}</ul>
+      <button class="btn" data-a="rtUpdate">Routine aktualisieren</button><button class="btn sec" data-a="rtKeep">Routine beibehalten</button>`)}
+  else sheet(summary);
+}
+/* Unterschiede zwischen gespeicherter Routine und heutigem Training, in Worten */
+function routineDiff(oldI,newI){
+  const key=l=>{const c={};return l.map(it=>{c[it.exId]=(c[it.exId]||0)+1;return it.exId+"#"+c[it.exId]})};
+  const ko=key(oldI),kn=key(newI),nm=it=>exById(it.exId).name,out=[];
+  ko.forEach((k,i)=>{if(!kn.includes(k))out.push("Weggelassen: "+nm(oldI[i]))});
+  kn.forEach((k,i)=>{if(!ko.includes(k))out.push("Neu: "+nm(newI[i])+" ("+newI[i].sets+" "+(newI[i].sets===1?"Satz":"Sätze")+")")});
+  ko.forEach((k,i)=>{const j=kn.indexOf(k);if(j>=0&&oldI[i].sets!==newI[j].sets)out.push(nm(oldI[i])+": "+newI[j].sets+" statt "+oldI[i].sets+" Sätze")});
+  const common=ko.filter(k=>kn.includes(k));
+  if(common.join()!==kn.filter(k=>ko.includes(k)).join())out.push("Reihenfolge geändert");
+  const sig=(l,ks)=>{const g={};l.forEach((it,i)=>{if(it.ss&&common.includes(ks[i]))(g[it.ss]=g[it.ss]||[]).push(ks[i])});return Object.values(g).filter(x=>x.length>1).map(x=>x.sort().join("+")).sort().join("|")};
+  if(sig(oldI,ko)!==sig(newI,kn))out.push("Supersätze geändert");
+  return out;
 }
 
 /* ---------- Pausentimer ---------- */
@@ -582,6 +603,9 @@ const A={
   sortEx(){sorter(S.active.exercises,()=>{save();render()})},
   sortMove(d){if(!sortCtx)return;const l=sortCtx.list,i=+d.i,j=i+(+d.v);if(j<0||j>=l.length)return;[l[i],l[j]]=[l[j],l[i]];sortCtx.done();sortSheet()},
   sortDone(){closeSheet()},
+  rtUpdate(){const p=pendRt;pendRt=null;if(!p)return closeSheet();const r=S.routines.find(x=>x.id===p.rid);if(r){r.items=p.items;save()}
+    sheet(p.summary);toast("Routine aktualisiert")},
+  rtKeep(){const p=pendRt;pendRt=null;if(!p)return closeSheet();sheet(p.summary)},
   undo(d,el){const f=undoFn;undoFn=null;const t=el.closest(".toast");if(t)t.remove();if(f)f()},
   exSwap(d){const i=+d.v;picker(id=>{const old=S.active.exercises[i],n=newEntry(id,old.sets.length);if(old.ss)n.ss=old.ss;S.active.exercises[i]=n;save();closeSheet();render()})},
   exDel(d){S.active.exercises.splice(+d.v,1);normSS(S.active.exercises);save();closeSheet();render()},
@@ -636,7 +660,7 @@ const A={
     <button class="btn" data-a="newEx">+ Eigene Übung anlegen</button><button class="btn sec" data-a="close">Schließen</button>`)}
 };
 document.addEventListener("click",ev=>{
-  if(ev.target.id==="modal")return closeSheet();
+  if(ev.target.id==="modal")return pendRt?A.rtKeep():closeSheet();
   const el=ev.target.closest("[data-a]");if(!el)return;
   const f=A[el.dataset.a];if(f)f(el.dataset,el);
 });
